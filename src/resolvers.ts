@@ -100,6 +100,61 @@ export function parseCitationMeta(html: string): PaperMeta | null {
   return { title, ...(shortVenue ? { venue: shortVenue } : {}), ...(year ? { year } : {}) };
 }
 
+const URL_RE = /https?:\/\/[^\s<>()"'\]]+/g;
+const TRAILING_PUNCT = /[.,;:!?]+$/;
+// characters that can continue a URL — a bare match must not be followed by one
+const URL_TAIL_CHAR = /[A-Za-z0-9/&%#?=._~+-]/;
+
+/**
+ * Collects bare (not-yet-linked) URLs from note text in document order,
+ * skipping frontmatter, fenced/inline code, markdown link targets, and
+ * <autolinks>. May contain duplicates if a URL appears more than once.
+ */
+export function findBareUrls(text: string): string[] {
+  const urls: string[] = [];
+  const lines = text.split('\n');
+  let i = 0;
+  if (lines[0] === '---') {
+    const end = lines.indexOf('---', 1);
+    if (end !== -1) i = end + 1;
+  }
+  let inFence = false;
+  for (; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    for (const m of line.matchAll(URL_RE)) {
+      const ch = m.index ?? 0;
+      const before = line.slice(Math.max(0, ch - 2), ch);
+      if (before.endsWith('<') || before === '](') continue;
+      const backticks = (line.slice(0, ch).match(/`/g) ?? []).length;
+      if (backticks % 2 === 1) continue;
+      urls.push(m[0].replace(TRAILING_PUNCT, ''));
+    }
+  }
+  return urls;
+}
+
+/**
+ * Index of the first bare occurrence of `url` in `line`, or -1. Skips
+ * occurrences that are markdown link targets, autolinks, or prefixes of a
+ * longer URL (e.g. .../1706.03762 inside .../1706.03762v5).
+ */
+export function bareOccurrenceIndex(line: string, url: string, from = 0): number {
+  let ch = line.indexOf(url, from);
+  while (ch !== -1) {
+    const before = line.slice(Math.max(0, ch - 2), ch);
+    const after = line[ch + url.length] ?? '';
+    const linked = before === '](' || before.endsWith('<');
+    if (!linked && !(after && URL_TAIL_CHAR.test(after))) return ch;
+    ch = line.indexOf(url, ch + 1);
+  }
+  return -1;
+}
+
 interface Resolver {
   name: string;
   matches(url: URL): boolean;

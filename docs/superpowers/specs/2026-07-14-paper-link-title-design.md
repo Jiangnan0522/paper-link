@@ -9,7 +9,7 @@ The user pastes paper URLs (arXiv, OpenReview, ACL Anthology, and other academic
 
 ## Behavior
 
-- **Trigger:** on paste only (`editor-paste` event). No manual command, no vault scanning, in v1.
+- **Trigger:** on paste (`editor-paste` event), plus a command-palette command (added v1.1, user-approved 2026-07-14): "Convert paper URLs in current note" scans the active note for bare URLs — skipping frontmatter, fenced/inline code, existing markdown links, and `<autolinks>` — resolves unique URLs with concurrency 4, converts every bare occurrence, and reports a summary notice. No vault-wide scanning.
 - **Activation condition:** the pasted clipboard text, after trimming, is exactly one `http(s)` URL and nothing else. Pastes containing prose or multiple URLs are left untouched.
 - **Non-blocking flow:**
   1. The raw URL is inserted into the note immediately (the paste is never delayed).
@@ -92,7 +92,6 @@ arxiv_url_parser/
 
 ## Out of scope (v1)
 
-- Manual command to convert existing notes retroactively.
 - Settings tab (format template, source toggles).
 - Handling pastes that contain more than a single URL.
 - DOI resolution via Crossref/DataCite APIs (generic resolver only reads page meta tags).
