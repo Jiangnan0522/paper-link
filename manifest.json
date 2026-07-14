@@ -1,0 +1,9 @@
+{
+  "id": "paper-link",
+  "name": "Paper Link",
+  "version": "1.0.0",
+  "minAppVersion": "1.0.0",
+  "description": "Replace pasted paper URLs (arXiv, OpenReview, ACL Anthology, …) with [Title (Venue Year)](url) links.",
+  "author": "Jiangnan Ye",
+  "isDesktopOnly": false
+}
