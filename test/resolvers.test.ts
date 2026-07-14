@@ -8,6 +8,8 @@ import {
   arxivId,
   aclVenueFromPath,
   resolvePaperUrl,
+  findBareUrls,
+  bareOccurrenceIndex,
 } from '../src/resolvers';
 import type { HttpGet } from '../src/resolvers';
 
@@ -139,6 +141,56 @@ test('openreview resolver throws when both APIs are blocked', async () => {
 test('openreview resolver returns null when the paper is not found', async () => {
   const emptyHttp: HttpGet = async () => JSON.stringify({ notes: [] });
   assert.equal(await resolvePaperUrl('https://openreview.net/forum?id=abc', emptyHttp), null);
+});
+
+test('findBareUrls collects plain URLs in document order', () => {
+  const text = 'see https://arxiv.org/abs/1706.03762 here\nand https://example.com/x too';
+  assert.deepEqual(findBareUrls(text), [
+    'https://arxiv.org/abs/1706.03762',
+    'https://example.com/x',
+  ]);
+});
+
+test('findBareUrls skips URLs already inside markdown links and autolinks', () => {
+  const text =
+    '[titled](https://arxiv.org/abs/1706.03762)\n<https://example.com/a>\nhttps://example.com/b';
+  assert.deepEqual(findBareUrls(text), ['https://example.com/b']);
+});
+
+test('findBareUrls skips frontmatter, fenced code, and inline code', () => {
+  const text = [
+    '---',
+    'source: https://example.com/frontmatter',
+    '---',
+    'https://example.com/body',
+    '```',
+    'https://example.com/fenced',
+    '```',
+    'run `curl https://example.com/inline` now',
+  ].join('\n');
+  assert.deepEqual(findBareUrls(text), ['https://example.com/body']);
+});
+
+test('findBareUrls strips trailing punctuation', () => {
+  assert.deepEqual(findBareUrls('read https://example.com/paper.'), [
+    'https://example.com/paper',
+  ]);
+  assert.deepEqual(findBareUrls('(see https://example.com/paper)'), [
+    'https://example.com/paper',
+  ]);
+});
+
+test('bareOccurrenceIndex finds a bare URL and skips linked ones', () => {
+  const url = 'https://x.org/p';
+  assert.equal(bareOccurrenceIndex(`before ${url} after`, url), 7);
+  assert.equal(bareOccurrenceIndex(`[t](${url})`, url), -1);
+  assert.equal(bareOccurrenceIndex(`<${url}>`, url), -1);
+});
+
+test('bareOccurrenceIndex does not match inside a longer URL', () => {
+  const short = 'https://arxiv.org/abs/1706.03762';
+  const line = `v5 is https://arxiv.org/abs/1706.03762v5 but plain is ${short}`;
+  assert.equal(bareOccurrenceIndex(line, short), line.lastIndexOf(short));
 });
 
 // --- live network tests (hit the real APIs) ---
