@@ -95,7 +95,9 @@ export function parseCitationMeta(html: string): PaperMeta | null {
       metaContent(html, 'citation_date') ??
       metaContent(html, 'citation_online_date'),
   );
-  return { title, ...(venue ? { venue } : {}), ...(year ? { year } : {}) };
+  // full proceedings titles are too long for inline link text
+  const shortVenue = venue && venue.length <= 60 ? venue : undefined;
+  return { title, ...(shortVenue ? { venue: shortVenue } : {}), ...(year ? { year } : {}) };
 }
 
 interface Resolver {
@@ -133,12 +135,17 @@ function orField(v: unknown): string | null {
   return null;
 }
 
-async function orFetchNote(apiUrl: string, http: HttpGet): Promise<any | null> {
+interface OrFetchResult {
+  reachable: boolean;
+  note: any | null;
+}
+
+async function orFetchNote(apiUrl: string, http: HttpGet): Promise<OrFetchResult> {
   try {
     const data = JSON.parse(await http(apiUrl));
-    return data.notes?.[0] ?? null;
+    return { reachable: true, note: data.notes?.[0] ?? null };
   } catch {
-    return null;
+    return { reachable: false, note: null };
   }
 }
 
@@ -149,10 +156,17 @@ const openreviewResolver: Resolver = {
     const id = u.searchParams.get('id');
     if (!id) return null;
     const q = `notes?id=${encodeURIComponent(id)}`;
-    const note =
-      (await orFetchNote(`https://api2.openreview.net/${q}`, http)) ??
-      (await orFetchNote(`https://api.openreview.net/${q}`, http));
-    if (!note) return null;
+    const v2 = await orFetchNote(`https://api2.openreview.net/${q}`, http);
+    const v1 = v2.note ? v2 : await orFetchNote(`https://api.openreview.net/${q}`, http);
+    const note = v2.note ?? v1.note;
+    if (!note) {
+      if (!v2.reachable && !v1.reachable) {
+        // OpenReview fronts its API with a Cloudflare Turnstile challenge that
+        // rejects non-interactive clients — surface this instead of silence.
+        throw new Error('OpenReview API blocked or unreachable');
+      }
+      return null;
+    }
     const rawTitle = orField(note.content?.title);
     if (!rawTitle) return null;
     const venue = orField(note.content?.venue);
@@ -168,6 +182,30 @@ const openreviewResolver: Resolver = {
   },
 };
 
+// Single-letter prefixes of old-style anthology IDs (e.g. N19-1423 → NAACL).
+const ACL_LETTER_VENUES: Record<string, string> = {
+  P: 'ACL',
+  N: 'NAACL',
+  D: 'EMNLP',
+  E: 'EACL',
+  C: 'COLING',
+  L: 'LREC',
+  S: 'SemEval',
+  Q: 'TACL',
+  J: 'CL',
+  W: 'Workshop',
+};
+
+export function aclVenueFromPath(pathname: string): string | undefined {
+  // new-style: /2023.acl-long.1/ or /2021.findings-acl.123/
+  const m = pathname.match(/\/\d{4}\.([a-z0-9]+)-([a-z0-9]+)/);
+  if (m) {
+    return m[1] === 'findings' ? `Findings of ${m[2].toUpperCase()}` : m[1].toUpperCase();
+  }
+  const old = pathname.match(/\/([A-Z])\d{2}-\d{4}/);
+  return old ? ACL_LETTER_VENUES[old[1]] : undefined;
+}
+
 const aclResolver: Resolver = {
   name: 'ACL Anthology',
   matches: (u) => /(^|\.)aclanthology\.org$/.test(u.hostname),
@@ -175,11 +213,10 @@ const aclResolver: Resolver = {
     const html = await http(u.href.replace(/\.pdf$/, ''));
     const meta = parseCitationMeta(html);
     if (!meta) return null;
-    if (!meta.venue) {
-      // e.g. /2023.acl-long.1/ → ACL
-      const slug = u.pathname.match(/\/\d{4}\.([a-z0-9]+)-/)?.[1];
-      if (slug) meta.venue = slug.toUpperCase();
-    }
+    // the citation meta venue is the full proceedings title — prefer the
+    // short conference name encoded in the anthology ID
+    const venue = aclVenueFromPath(u.pathname);
+    if (venue) meta.venue = venue;
     return meta;
   },
 };

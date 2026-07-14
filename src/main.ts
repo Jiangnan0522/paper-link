@@ -15,6 +15,9 @@ const httpGet: HttpGet = async (url) => {
 };
 
 export default class PaperLinkPlugin extends Plugin {
+  // exposed for console debugging: app.plugins.plugins['paper-link'].httpGet(url)
+  httpGet = httpGet;
+
   async onload() {
     this.registerEvent(
       this.app.workspace.on('editor-paste', (evt, editor) => this.onPaste(evt, editor)),
@@ -36,8 +39,10 @@ export default class PaperLinkPlugin extends Plugin {
     let meta;
     try {
       meta = await resolvePaperUrl(url, httpGet);
-    } catch {
-      new Notice('Paper Link: could not fetch title');
+    } catch (e) {
+      new Notice(
+        `Paper Link: could not fetch title (${e instanceof Error ? e.message : String(e)})`,
+      );
       return;
     }
     if (!meta) return; // not a paper page — leave the URL alone

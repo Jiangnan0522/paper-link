@@ -6,6 +6,7 @@ import {
   parseArxivAtom,
   parseCitationMeta,
   arxivId,
+  aclVenueFromPath,
   resolvePaperUrl,
 } from '../src/resolvers';
 import type { HttpGet } from '../src/resolvers';
@@ -107,6 +108,39 @@ test('arxivId handles abs/pdf/html forms, versions, old-style IDs', () => {
   assert.equal(arxivId(new URL('https://arxiv.org/list/cs.CL/recent')), null);
 });
 
+test('parseCitationMeta drops overlong venue names', () => {
+  const longVenue =
+    'Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics';
+  const html = `<head><meta name="citation_title" content="T">
+    <meta name="citation_conference_title" content="${longVenue}">
+    <meta name="citation_publication_date" content="2019/6"></head>`;
+  assert.deepEqual(parseCitationMeta(html), { title: 'T', year: '2019' });
+});
+
+test('aclVenueFromPath maps anthology IDs to short venue names', () => {
+  assert.equal(aclVenueFromPath('/2023.acl-long.1/'), 'ACL');
+  assert.equal(aclVenueFromPath('/2020.emnlp-main.55/'), 'EMNLP');
+  assert.equal(aclVenueFromPath('/2021.findings-acl.123/'), 'Findings of ACL');
+  assert.equal(aclVenueFromPath('/N19-1423/'), 'NAACL');
+  assert.equal(aclVenueFromPath('/P19-1001/'), 'ACL');
+  assert.equal(aclVenueFromPath('/D15-1044/'), 'EMNLP');
+  assert.equal(aclVenueFromPath('/X99-9999/'), undefined);
+});
+
+test('openreview resolver throws when both APIs are blocked', async () => {
+  const blockedHttp: HttpGet = async () => {
+    throw new Error('Request failed, status 403');
+  };
+  await assert.rejects(
+    resolvePaperUrl('https://openreview.net/forum?id=abc', blockedHttp),
+  );
+});
+
+test('openreview resolver returns null when the paper is not found', async () => {
+  const emptyHttp: HttpGet = async () => JSON.stringify({ notes: [] });
+  assert.equal(await resolvePaperUrl('https://openreview.net/forum?id=abc', emptyHttp), null);
+});
+
 // --- live network tests (hit the real APIs) ---
 
 const http: HttpGet = async (url) => {
@@ -145,6 +179,7 @@ test('live: OpenReview forum URL', async (t) => {
 test('live: ACL Anthology URL', async () => {
   const meta = await resolvePaperUrl('https://aclanthology.org/N19-1423/', http);
   assert.match(meta?.title ?? '', /BERT/);
+  assert.equal(meta?.venue, 'NAACL');
   assert.equal(meta?.year, '2019');
 });
 
