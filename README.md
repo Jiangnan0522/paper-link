@@ -1,6 +1,6 @@
 # Paper Link
 
-An [Obsidian](https://obsidian.md) plugin that replaces pasted academic paper URLs with readable, titled markdown links.
+An [Obsidian](https://obsidian.md) plugin that **automatically** replaces pasted academic paper URLs with readable, titled markdown links, just when you press `ctrl+v`/`command+v`!
 
 Paste `https://arxiv.org/abs/1706.03762` into a note and it becomes:
 
