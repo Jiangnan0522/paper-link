@@ -10,6 +10,23 @@ export interface PaperMeta {
 /** Fetches a URL, returns the response body text. Must throw on HTTP errors. */
 export type HttpGet = (url: string) => Promise<string>;
 
+/**
+ * A transient throttling failure that is worth retrying. `httpGet` maps
+ * 429/503 responses to this, and the arXiv resolver raises it when the API
+ * returns its plain-text "Rate exceeded" body (with HTTP 200) instead of XML.
+ */
+export class RateLimitError extends Error {
+  constructor(public source: string) {
+    super(`${source} rate limit exceeded`);
+    this.name = 'RateLimitError';
+  }
+}
+
+/** arXiv's export API answers a throttled request with a bare "Rate exceeded" body. */
+export function isArxivRateLimited(body: string): boolean {
+  return /rate exceeded/i.test(body) && !/<entry>/.test(body);
+}
+
 export function isSingleUrl(text: string): boolean {
   if (/\s/.test(text)) return false;
   try {
@@ -177,6 +194,9 @@ const arxivResolver: Resolver = {
     const xml = await http(
       `https://export.arxiv.org/api/query?id_list=${encodeURIComponent(id)}`,
     );
+    // A throttled response is HTTP 200 with a "Rate exceeded" body, so it never
+    // reaches httpGet's status check — detect it here and make it retryable.
+    if (isArxivRateLimited(xml)) throw new RateLimitError('arXiv');
     return parseArxivAtom(xml);
   },
 };
@@ -291,11 +311,34 @@ const RESOLVERS: Resolver[] = [
   genericResolver,
 ];
 
+export interface ResolveOptions {
+  /** Number of extra attempts after the first when rate-limited (default 2). */
+  retries?: number;
+  /** Base backoff in ms; doubles each retry (default 2500). */
+  baseDelayMs?: number;
+  /** Injectable delay, so tests don't wait in real time. */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 export async function resolvePaperUrl(
   rawUrl: string,
   http: HttpGet,
+  opts: ResolveOptions = {},
 ): Promise<PaperMeta | null> {
+  const { retries = 2, baseDelayMs = 2500, sleep = defaultSleep } = opts;
   const url = new URL(rawUrl);
   const resolver = RESOLVERS.find((r) => r.matches(url))!;
-  return resolver.resolve(url, http);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await resolver.resolve(url, http);
+    } catch (e) {
+      if (e instanceof RateLimitError && attempt < retries) {
+        await sleep(baseDelayMs * 2 ** attempt);
+        continue;
+      }
+      throw e;
+    }
+  }
 }
