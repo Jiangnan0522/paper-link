@@ -4,19 +4,38 @@ import {
   findBareUrls,
   formatLink,
   isSingleUrl,
+  RateLimitError,
   resolvePaperUrl,
 } from './resolvers';
 import type { HttpGet } from './resolvers';
 
 const FETCH_TIMEOUT_MS = 10_000;
 
+// arXiv asks clients to leave ≥3s between export-API calls; keep to it so a
+// note full of arXiv links doesn't trip the throttle in the first place.
+const HOST_MIN_INTERVAL_MS: Record<string, number> = { 'export.arxiv.org': 3000 };
+const hostNextAllowed: Record<string, number> = {};
+
+async function throttleHost(url: string): Promise<void> {
+  const host = new URL(url).hostname;
+  const min = HOST_MIN_INTERVAL_MS[host];
+  if (!min) return;
+  const now = Date.now();
+  const wait = Math.max(0, (hostNextAllowed[host] ?? 0) - now);
+  hostNextAllowed[host] = Math.max(now, hostNextAllowed[host] ?? 0) + min;
+  if (wait) await new Promise((r) => setTimeout(r, wait));
+}
+
 const httpGet: HttpGet = async (url) => {
+  await throttleHost(url);
   const res = await Promise.race([
-    requestUrl({ url, throw: true }),
+    requestUrl({ url, throw: false }),
     new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error(`timeout fetching ${url}`)), FETCH_TIMEOUT_MS),
     ),
   ]);
+  if (res.status === 429 || res.status === 503) throw new RateLimitError('server');
+  if (res.status >= 400) throw new Error(`request failed, status ${res.status}`);
   return res.text;
 };
 
@@ -44,22 +63,27 @@ export default class PaperLinkPlugin extends Plugin {
     new Notice(`Paper Link: checking ${unique.length} URL(s)…`);
     let converted = 0;
     let failed = 0;
+    let rateLimited = 0;
     const jobs = unique.map((url) => async () => {
       let meta;
       try {
         meta = await resolvePaperUrl(url, httpGet);
-      } catch {
-        failed++;
+      } catch (e) {
+        if (e instanceof RateLimitError) rateLimited++;
+        else failed++;
         return;
       }
       if (!meta) return; // not a paper page
       const link = formatLink(meta, url);
       while (this.replaceFirstBareOccurrence(editor, url, link)) converted++;
     });
-    await runWithConcurrency(jobs, 4);
-    new Notice(
-      `Paper Link: converted ${converted} link(s)` + (failed ? `, ${failed} failed` : ''),
-    );
+    // arXiv requests are already serialized by the per-host throttle; a small
+    // pool keeps the other hosts responsive without hammering any one of them.
+    await runWithConcurrency(jobs, 3);
+    const parts = [`converted ${converted} link(s)`];
+    if (rateLimited) parts.push(`${rateLimited} rate-limited (try again)`);
+    if (failed) parts.push(`${failed} failed`);
+    new Notice(`Paper Link: ${parts.join(', ')}`);
   }
 
   onPaste(evt: ClipboardEvent, editor: Editor) {
@@ -79,7 +103,9 @@ export default class PaperLinkPlugin extends Plugin {
       meta = await resolvePaperUrl(url, httpGet);
     } catch (e) {
       new Notice(
-        `Paper Link: could not fetch title (${e instanceof Error ? e.message : String(e)})`,
+        e instanceof RateLimitError
+          ? 'Paper Link: rate-limited — paste again in a moment'
+          : `Paper Link: could not fetch title (${e instanceof Error ? e.message : String(e)})`,
       );
       return;
     }

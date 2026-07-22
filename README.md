@@ -39,6 +39,14 @@ OpenReview fronts its API with a Cloudflare Turnstile challenge that blocks all 
 - If you edit or undo before the title arrives, the replacement is silently dropped.
 - URLs pasted into an existing `[text](` link are left alone.
 
+## arXiv rate limits
+
+arXiv's API asks clients to leave ~3 seconds between requests. The plugin
+serializes its arXiv calls to respect this, retries a throttled request a few
+times with exponential backoff, and — if it's still throttled — leaves the URL
+raw and tells you to try again rather than failing silently. Converting a note
+with many arXiv links is therefore paced deliberately (a few seconds per link).
+
 ## Installation
 
 **From the community directory** (once accepted): Settings → Community plugins → Browse → "Paper Link".

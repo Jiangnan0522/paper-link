@@ -10,8 +10,15 @@ import {
   resolvePaperUrl,
   findBareUrls,
   bareOccurrenceIndex,
+  isArxivRateLimited,
+  RateLimitError,
 } from '../src/resolvers';
 import type { HttpGet } from '../src/resolvers';
+
+const ATTENTION_XML = `<?xml version="1.0"?><feed>
+  <entry><title>Attention Is All You Need</title>
+  <published>2017-06-12T17:57:34Z</published></entry></feed>`;
+const noSleep = async () => {};
 
 test('isSingleUrl accepts a bare http(s) URL', () => {
   assert.equal(isSingleUrl('https://arxiv.org/abs/1706.03762'), true);
@@ -191,6 +198,69 @@ test('bareOccurrenceIndex does not match inside a longer URL', () => {
   const short = 'https://arxiv.org/abs/1706.03762';
   const line = `v5 is https://arxiv.org/abs/1706.03762v5 but plain is ${short}`;
   assert.equal(bareOccurrenceIndex(line, short), line.lastIndexOf(short));
+});
+
+test('isArxivRateLimited detects the throttle body but not a real feed', () => {
+  assert.equal(isArxivRateLimited('Rate exceeded.'), true);
+  assert.equal(isArxivRateLimited('  RATE EXCEEDED\n'), true);
+  assert.equal(isArxivRateLimited(ATTENTION_XML), false);
+  assert.equal(isArxivRateLimited(''), false);
+});
+
+test('arXiv resolver throws RateLimitError on a throttle body', async () => {
+  const http: HttpGet = async () => 'Rate exceeded.';
+  await assert.rejects(
+    resolvePaperUrl('https://arxiv.org/abs/1706.03762', http, { retries: 0 }),
+    (e) => e instanceof RateLimitError && (e as RateLimitError).source === 'arXiv',
+  );
+});
+
+test('resolvePaperUrl retries a rate limit then succeeds, with backoff', async () => {
+  let calls = 0;
+  const http: HttpGet = async () => (++calls === 1 ? 'Rate exceeded.' : ATTENTION_XML);
+  const delays: number[] = [];
+  const meta = await resolvePaperUrl('https://arxiv.org/pdf/1706.03762', http, {
+    retries: 2,
+    baseDelayMs: 100,
+    sleep: async (ms) => {
+      delays.push(ms);
+    },
+  });
+  assert.equal(calls, 2);
+  assert.equal(meta?.title, 'Attention Is All You Need');
+  assert.deepEqual(delays, [100]);
+});
+
+test('resolvePaperUrl gives up after exhausting retries and rethrows', async () => {
+  let calls = 0;
+  const http: HttpGet = async () => {
+    calls++;
+    return 'Rate exceeded.';
+  };
+  await assert.rejects(
+    resolvePaperUrl('https://arxiv.org/abs/1706.03762', http, {
+      retries: 2,
+      sleep: noSleep,
+    }),
+    (e) => e instanceof RateLimitError,
+  );
+  assert.equal(calls, 3); // initial + 2 retries
+});
+
+test('resolvePaperUrl does not retry a non-rate-limit failure', async () => {
+  let calls = 0;
+  const http: HttpGet = async () => {
+    calls++;
+    throw new Error('network down');
+  };
+  await assert.rejects(
+    resolvePaperUrl('https://arxiv.org/abs/1706.03762', http, {
+      retries: 2,
+      sleep: noSleep,
+    }),
+    /network down/,
+  );
+  assert.equal(calls, 1); // no retries for a generic error
 });
 
 // --- live network tests (hit the real APIs) ---
