@@ -1,4 +1,4 @@
-# Paper Manager
+# Paper Link
 
 An [Obsidian](https://obsidian.md) plugin that keeps your papers in your vault. Paste an academic paper URL and it becomes a readable, titled link — **automatically**, just when you press `ctrl+v`/`command+v` — with a 📝 button to the paper's own note, so every paper has exactly one place for your understanding, AI summaries, and links from the rest of your notes.
 
@@ -25,7 +25,7 @@ Non-paper URLs are never touched: if a page has no citation metadata, the URL is
 
 **On paste** — copy a paper URL and paste it into a note. It converts automatically. Only fires when the clipboard is exactly one URL; pasting prose containing URLs does nothing.
 
-**Existing notes** — run the command **"Paper Manager: Convert paper URLs in current note"** from the command palette. It converts every bare paper URL in the active note, skipping URLs that are already links, in frontmatter, or inside code blocks, and reports a summary when done.
+**Existing notes** — run the command **"Paper Link: Convert paper URLs in current note"** from the command palette. It converts every bare paper URL in the active note, skipping URLs that are already links, in frontmatter, or inside code blocks, and reports a summary when done.
 
 ## Paper pages
 
@@ -79,7 +79,7 @@ changes.
   are redirected, and the extra copies go to the system trash.
 - Notes move into the paper pages folder under their current name; links
   update automatically, and `![[Zotero.base]]` embeds now point at the papers base.
-- Every original file is first copied to `.paper-manager-backup/` in the vault.
+- Every original file is first copied to `.paper-link-backup/` in the vault.
 
 ## Link format
 
@@ -105,9 +105,9 @@ with many arXiv links is therefore paced deliberately (a few seconds per link).
 
 ## Installation
 
-**From the community directory** (once accepted): Settings → Community plugins → Browse → "Paper Manager".
+**From the community directory** (once accepted): Settings → Community plugins → Browse → "Paper Link".
 
-**Manual**: copy `main.js`, `manifest.json`, and `styles.css` from the latest [release](../../releases) into `<vault>/.obsidian/plugins/paper-manager/`, then enable the plugin in Settings → Community plugins.
+**Manual**: copy `main.js`, `manifest.json`, and `styles.css` from the latest [release](../../releases) into `<vault>/.obsidian/plugins/paper-link/`, then enable the plugin in Settings → Community plugins.
 
 ## Development
 

@@ -1,6 +1,6 @@
 /* The 📝 wikilink after a paper link, drawn as a small button. */
-a.internal-link.paper-manager-page-btn,
-.markdown-source-view span.paper-manager-page-btn {
+a.internal-link.paper-link-page-btn,
+.markdown-source-view span.paper-link-page-btn {
   display: inline-block;
   padding: 0 0.3em;
   margin-left: 0.15em;
@@ -13,8 +13,8 @@ a.internal-link.paper-manager-page-btn,
   vertical-align: baseline;
 }
 
-a.internal-link.paper-manager-page-btn:hover,
-.markdown-source-view span.paper-manager-page-btn:hover {
+a.internal-link.paper-link-page-btn:hover,
+.markdown-source-view span.paper-link-page-btn:hover {
   background-color: var(--background-modifier-hover);
   border-color: var(--interactive-accent);
 }
