@@ -1,6 +1,6 @@
 {
   "name": "paper-link",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Obsidian plugin: titled paper links and one note per paper",
   "type": "module",
   "scripts": {

@@ -190,10 +190,10 @@ export default class PaperLinkPlugin extends Plugin {
   async convertAll(editor: Editor) {
     const unique = [...new Set(findBareUrls(editor.getValue()))];
     if (!unique.length) {
-      new Notice('Paper Link: no bare URLs found');
+      new Notice('Paper Vault: no bare URLs found');
       return;
     }
-    new Notice(`Paper Link: checking ${unique.length} URL(s)…`);
+    new Notice(`Paper Vault: checking ${unique.length} URL(s)…`);
     let converted = 0;
     let failed = 0;
     let rateLimited = 0;
@@ -220,7 +220,7 @@ export default class PaperLinkPlugin extends Plugin {
     const parts = [`converted ${converted} link(s)`];
     if (rateLimited) parts.push(`${rateLimited} rate-limited (try again)`);
     if (failed) parts.push(`${failed} failed`);
-    new Notice(`Paper Link: ${parts.join(', ')}`);
+    new Notice(`Paper Vault: ${parts.join(', ')}`);
   }
 
   onPaste(evt: ClipboardEvent, editor: Editor) {
@@ -241,8 +241,8 @@ export default class PaperLinkPlugin extends Plugin {
     } catch (e) {
       new Notice(
         e instanceof RateLimitError
-          ? 'Paper Link: rate-limited — paste again in a moment'
-          : `Paper Link: could not fetch title (${e instanceof Error ? e.message : String(e)})`,
+          ? 'Paper Vault: rate-limited — paste again in a moment'
+          : `Paper Vault: could not fetch title (${e instanceof Error ? e.message : String(e)})`,
       );
       return;
     }
@@ -277,17 +277,17 @@ export default class PaperLinkPlugin extends Plugin {
   /** Backfill: append a 📝 page link to existing paper links that lack one. */
   async addPageLinks(editor: Editor) {
     if (this.settings.pageMode === 'off') {
-      new Notice('Paper Link: paper pages are turned off in settings');
+      new Notice('Paper Vault: paper pages are turned off in settings');
       return;
     }
     const urls = [
       ...new Set(findPaperLinks(editor.getValue()).filter((r) => !r.pageLink).map((r) => r.url)),
     ];
     if (!urls.length) {
-      new Notice('Paper Link: every link already has a page link');
+      new Notice('Paper Vault: every link already has a page link');
       return;
     }
-    new Notice(`Paper Link: checking ${urls.length} link(s)…`);
+    new Notice(`Paper Vault: checking ${urls.length} link(s)…`);
     let added = 0;
     let skipped = 0;
     const jobs = urls.map((url) => async () => {
@@ -314,7 +314,7 @@ export default class PaperLinkPlugin extends Plugin {
     });
     await runWithConcurrency(jobs, 3);
     new Notice(
-      `Paper Link: added ${added} page link(s)` + (skipped ? `, ${skipped} failed (try again)` : ''),
+      `Paper Vault: added ${added} page link(s)` + (skipped ? `, ${skipped} failed (try again)` : ''),
     );
   }
 
@@ -356,7 +356,7 @@ export default class PaperLinkPlugin extends Plugin {
       const file = await this.app.vault.create(plan.path, '');
       await this.writePage(file, meta, url, plan.paperId);
     } catch (e) {
-      new Notice(`Paper Link: could not create page (${e instanceof Error ? e.message : e})`);
+      new Notice(`Paper Vault: could not create page (${e instanceof Error ? e.message : e})`);
     } finally {
       this.filling.delete(plan.path);
     }
@@ -371,7 +371,7 @@ export default class PaperLinkPlugin extends Plugin {
     if (!url) return; // an ordinary new note in the folder
     this.filling.add(file.path);
     try {
-      const notice = new Notice('Paper Link: fetching paper details…', 0);
+      const notice = new Notice('Paper Vault: fetching paper details…', 0);
       let meta: PaperMeta | null = null;
       try {
         meta = await resolvePaperUrl(url, httpGet);
@@ -379,15 +379,15 @@ export default class PaperLinkPlugin extends Plugin {
         notice.hide();
       }
       if (!meta) {
-        new Notice('Paper Link: could not fetch paper details for this page');
+        new Notice('Paper Vault: could not fetch paper details for this page');
         return;
       }
       await this.writePage(file, meta, url, canonicalPaperId(url, meta));
     } catch (e) {
       new Notice(
         e instanceof RateLimitError
-          ? 'Paper Link: rate-limited — run "Refresh metadata of current paper page" in a moment'
-          : `Paper Link: could not fill page (${e instanceof Error ? e.message : e})`,
+          ? 'Paper Vault: rate-limited — run "Refresh metadata of current paper page" in a moment'
+          : `Paper Vault: could not fill page (${e instanceof Error ? e.message : e})`,
       );
       // leave a url so the refresh command can finish the job later
       await this.app.fileManager.processFrontMatter(file, (fm) => {
@@ -463,17 +463,17 @@ export default class PaperLinkPlugin extends Plugin {
       return await fetchS2Extra(paperId, url, httpGet, this.settings.s2ApiKey || undefined);
     } catch (e) {
       // keyless Semantic Scholar 429s often — a missing TL;DR is not an error
-      console.debug('Paper Link: Semantic Scholar lookup failed', e);
+      console.debug('Paper Vault: Semantic Scholar lookup failed', e);
       return {};
     }
   }
 
   async refreshPage(file: TFile, url: string) {
-    const notice = new Notice('Paper Link: refreshing…', 0);
+    const notice = new Notice('Paper Vault: refreshing…', 0);
     try {
       const meta = await resolvePaperUrl(url, httpGet);
       if (!meta) {
-        new Notice('Paper Link: no paper metadata found at this URL');
+        new Notice('Paper Vault: no paper metadata found at this URL');
         return;
       }
       const paperId = canonicalPaperId(url, meta);
@@ -481,7 +481,7 @@ export default class PaperLinkPlugin extends Plugin {
       if (!body.trim()) {
         // a page whose first fill failed — write the full template now
         await this.writePage(file, meta, url, paperId);
-        new Notice('Paper Link: page filled');
+        new Notice('Paper Vault: page filled');
         return;
       }
       await this.app.fileManager.processFrontMatter(file, (fm) => {
@@ -489,14 +489,14 @@ export default class PaperLinkPlugin extends Plugin {
       });
       const gotTldr = this.settings.fetchTldr && (await this.addTldr(file, paperId, url));
       new Notice(
-        'Paper Link: metadata refreshed' +
+        'Paper Vault: metadata refreshed' +
           (this.settings.fetchTldr && !gotTldr ? ' (TL;DR not available yet)' : ''),
       );
     } catch (e) {
       new Notice(
         e instanceof RateLimitError
-          ? 'Paper Link: rate-limited — try again in a moment'
-          : `Paper Link: refresh failed (${e instanceof Error ? e.message : e})`,
+          ? 'Paper Vault: rate-limited — try again in a moment'
+          : `Paper Vault: refresh failed (${e instanceof Error ? e.message : e})`,
       );
     } finally {
       notice.hide();
@@ -509,7 +509,7 @@ export default class PaperLinkPlugin extends Plugin {
     const path = normalizePath(raw.endsWith('.md') ? raw : `${raw}.md`);
     const file = this.app.vault.getAbstractFileByPath(path);
     if (file instanceof TFile) return this.app.vault.read(file);
-    new Notice(`Paper Link: template "${path}" not found — using the built-in one`);
+    new Notice(`Paper Vault: template "${path}" not found — using the built-in one`);
     return DEFAULT_TEMPLATE;
   }
 
@@ -562,7 +562,7 @@ export default class PaperLinkPlugin extends Plugin {
     const { items, skipped } = await this.collectZoteroMigration();
     if (!items.length) {
       new Notice(
-        'Paper Link: no Zotero notes to migrate' + (skipped.length ? ` (${skipped.length} skipped)` : ''),
+        'Paper Vault: no Zotero notes to migrate' + (skipped.length ? ` (${skipped.length} skipped)` : ''),
       );
       return;
     }
@@ -643,7 +643,7 @@ export default class PaperLinkPlugin extends Plugin {
   async runZoteroMigration(items: MigrationItem[]) {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const backupDir = `.paper-link-backup/zotero-${stamp}`;
-    const notice = new Notice(`Paper Link: migrating ${items.length} Zotero notes…`, 0);
+    const notice = new Notice(`Paper Vault: migrating ${items.length} Zotero notes…`, 0);
     let done = 0;
     let merged = 0;
     const failed: string[] = [];
@@ -684,21 +684,21 @@ export default class PaperLinkPlugin extends Plugin {
           // renameFile rewrites every link to the note
           if (file.path !== dest) await this.app.fileManager.renameFile(file, dest);
           done++;
-          notice.setMessage(`Paper Link: migrating Zotero notes… ${done}/${items.length}`);
+          notice.setMessage(`Paper Vault: migrating Zotero notes… ${done}/${items.length}`);
         } catch (e) {
           failed.push(`${file.path}: ${e instanceof Error ? e.message : e}`);
         }
       }
       const embeds = await this.replaceZoteroBaseEmbeds();
       new Notice(
-        `Paper Link: migrated ${done} Zotero note(s)` +
+        `Paper Vault: migrated ${done} Zotero note(s)` +
           (merged ? `, merged ${merged} duplicate(s)` : '') +
           (embeds ? `, pointed ${embeds} embed(s) at the papers base` : '') +
           (failed.length ? `, ${failed.length} failed (see console)` : '') +
           `. Originals backed up in ${backupDir}/`,
         15000,
       );
-      if (failed.length) console.warn('Paper Link: Zotero migration failures', failed);
+      if (failed.length) console.warn('Paper Vault: Zotero migration failures', failed);
     } finally {
       notice.hide();
     }
@@ -793,11 +793,11 @@ export default class PaperLinkPlugin extends Plugin {
         }
         file = await this.app.vault.create(path, papersBaseFile());
       } catch (e) {
-        if (announce) new Notice(`Paper Link: could not create ${path} (${e})`);
+        if (announce) new Notice(`Paper Vault: could not create ${path} (${e})`);
         return;
       }
     } else if (announce) {
-      new Notice(`Paper Link: ${path} already exists — opening it`);
+      new Notice(`Paper Vault: ${path} already exists — opening it`);
     }
     if (announce && file instanceof TFile) await this.app.workspace.getLeaf(false).openFile(file);
   }
