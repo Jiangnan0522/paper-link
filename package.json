@@ -10,8 +10,8 @@
     "install-vault": "npm run build && node scripts/install.mjs"
   },
   "devDependencies": {
-    "@codemirror/state": "^6.7.6",
-    "@codemirror/view": "^6.43.14",
+    "@codemirror/state": "6.5.0",
+    "@codemirror/view": "6.38.6",
     "@types/node": "^20.0.0",
     "esbuild": "^0.21.0",
     "obsidian": "^1.5.7",
