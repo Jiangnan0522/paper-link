@@ -1,19 +1,21 @@
 {
-  "name": "paper-link",
-  "version": "1.1.1",
-  "description": "Obsidian plugin: replace pasted paper URLs with titled markdown links",
+  "name": "paper-manager",
+  "version": "1.2.0",
+  "description": "Obsidian plugin: titled paper links and one note per paper",
   "type": "module",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc --noEmit && node esbuild.config.mjs production",
-    "test": "esbuild test/resolvers.test.ts --bundle --platform=node --format=cjs --outfile=build/test.cjs && node --test build/test.cjs",
+    "test": "esbuild test/*.test.ts --bundle --platform=node --format=cjs --outdir=build --out-extension:.js=.cjs && node --test build/resolvers.test.cjs build/paperPage.test.cjs build/zoteroMigration.test.cjs",
     "install-vault": "npm run build && node scripts/install.mjs"
   },
   "devDependencies": {
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.14",
+    "@types/node": "^20.0.0",
     "esbuild": "^0.21.0",
     "obsidian": "^1.5.7",
     "tslib": "^2.6.0",
-    "typescript": "^5.4.0",
-    "@types/node": "^20.0.0"
+    "typescript": "^5.4.0"
   }
 }
