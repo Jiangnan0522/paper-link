@@ -267,7 +267,7 @@ test('resolvePaperUrl does not retry a non-rate-limit failure', async () => {
 
 const http: HttpGet = async (url) => {
   const res = await fetch(url, {
-    headers: { 'user-agent': 'paper-link-obsidian-plugin-test' },
+    headers: { 'user-agent': 'paper-manager-obsidian-plugin-test' },
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return res.text();

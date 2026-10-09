@@ -5,10 +5,14 @@ export interface PaperMeta {
   title: string;
   venue?: string;
   year?: string;
+  authors?: string[];
+  abstract?: string;
+  doi?: string;
+  pdfUrl?: string;
 }
 
 /** Fetches a URL, returns the response body text. Must throw on HTTP errors. */
-export type HttpGet = (url: string) => Promise<string>;
+export type HttpGet = (url: string, headers?: Record<string, string>) => Promise<string>;
 
 /**
  * A transient throttling failure that is worth retrying. `httpGet` maps
@@ -80,7 +84,19 @@ export function parseArxivAtom(xml: string): PaperMeta | null {
   const title = cleanText(rawTitle);
   if (!title || title === 'Error') return null;
   const year = entry.match(/<published>(\d{4})/)?.[1];
-  return { title, venue: 'arXiv', ...(year ? { year } : {}) };
+  const authors = [...entry.matchAll(/<author>\s*<name>([\s\S]*?)<\/name>/g)].map((m) =>
+    cleanText(m[1]),
+  );
+  const abstract = entry.match(/<summary>([\s\S]*?)<\/summary>/)?.[1];
+  const doi = entry.match(/<arxiv:doi[^>]*>([\s\S]*?)<\/arxiv:doi>/)?.[1];
+  return {
+    title,
+    venue: 'arXiv',
+    ...(year ? { year } : {}),
+    ...(authors.length ? { authors } : {}),
+    ...(abstract ? { abstract: cleanText(abstract) } : {}),
+    ...(doi ? { doi: cleanText(doi) } : {}),
+  };
 }
 
 // Attribute values may be double-quoted, single-quoted, or bare (ACL Anthology
@@ -92,13 +108,24 @@ function attrValue(tag: string, attr: string): string | undefined {
   return m?.[1] ?? m?.[2] ?? m?.[3];
 }
 
-function metaContent(html: string, name: string): string | undefined {
+function metaContents(html: string, name: string): string[] {
+  const out: string[] = [];
   for (const tag of html.match(/<meta\b[^>]*>/gi) ?? []) {
     if (attrValue(tag, 'name') !== name) continue;
     const raw = attrValue(tag, 'content');
-    if (raw !== undefined) return cleanText(raw);
+    if (raw !== undefined) out.push(cleanText(raw));
   }
-  return undefined;
+  return out;
+}
+
+function metaContent(html: string, name: string): string | undefined {
+  return metaContents(html, name)[0];
+}
+
+/** "Vaswani, Ashish" → "Ashish Vaswani"; names without exactly one comma pass through. */
+function displayName(author: string): string {
+  const parts = author.split(',').map((p) => p.trim());
+  return parts.length === 2 && parts[0] && parts[1] ? `${parts[1]} ${parts[0]}` : author;
 }
 
 export function parseCitationMeta(html: string): PaperMeta | null {
@@ -114,7 +141,19 @@ export function parseCitationMeta(html: string): PaperMeta | null {
   );
   // full proceedings titles are too long for inline link text
   const shortVenue = venue && venue.length <= 60 ? venue : undefined;
-  return { title, ...(shortVenue ? { venue: shortVenue } : {}), ...(year ? { year } : {}) };
+  const authors = metaContents(html, 'citation_author').map(displayName);
+  const abstract = metaContent(html, 'citation_abstract');
+  const doi = metaContent(html, 'citation_doi');
+  const pdfUrl = metaContent(html, 'citation_pdf_url');
+  return {
+    title,
+    ...(shortVenue ? { venue: shortVenue } : {}),
+    ...(year ? { year } : {}),
+    ...(authors.length ? { authors } : {}),
+    ...(abstract ? { abstract } : {}),
+    ...(doi ? { doi } : {}),
+    ...(pdfUrl ? { pdfUrl } : {}),
+  };
 }
 
 const URL_RE = /https?:\/\/[^\s<>()"'\]]+/g;
@@ -197,7 +236,9 @@ const arxivResolver: Resolver = {
     // A throttled response is HTTP 200 with a "Rate exceeded" body, so it never
     // reaches httpGet's status check — detect it here and make it retryable.
     if (isArxivRateLimited(xml)) throw new RateLimitError('arXiv');
-    return parseArxivAtom(xml);
+    const meta = parseArxivAtom(xml);
+    if (meta) meta.pdfUrl = `https://arxiv.org/pdf/${id.replace(/v\d+$/, '')}`;
+    return meta;
   },
 };
 
@@ -246,6 +287,8 @@ const openreviewResolver: Resolver = {
     if (!rawTitle) return null;
     const venue = orField(note.content?.venue);
     const ms: unknown = note.pdate ?? note.cdate;
+    const authors = note.content?.authors?.value ?? note.content?.authors;
+    const abstract = orField(note.content?.abstract);
     const year =
       yearFrom(venue ?? undefined) ??
       (typeof ms === 'number' ? String(new Date(ms).getUTCFullYear()) : undefined);
@@ -253,6 +296,9 @@ const openreviewResolver: Resolver = {
       title: cleanText(rawTitle),
       ...(venue ? { venue: cleanText(venue) } : {}),
       ...(year ? { year } : {}),
+      ...(Array.isArray(authors) && authors.length ? { authors: authors.map(String) } : {}),
+      ...(abstract ? { abstract: cleanText(abstract) } : {}),
+      pdfUrl: `https://openreview.net/pdf?id=${encodeURIComponent(id)}`,
     };
   },
 };
@@ -341,4 +387,75 @@ export async function resolvePaperUrl(
       throw e;
     }
   }
+}
+
+/**
+ * A stable identity for a paper, independent of which URL variant was pasted
+ * (abs vs pdf, version suffixes, trailing slashes). Paper pages store it in
+ * frontmatter as `paper_id`, and it is the dedup key — not the file name.
+ */
+export function canonicalPaperId(rawUrl: string, meta?: PaperMeta): string {
+  const u = new URL(rawUrl);
+  if (/(^|\.)arxiv\.org$/.test(u.hostname)) {
+    const id = arxivId(u);
+    if (id) return `arxiv:${id.replace(/v\d+$/, '')}`;
+  }
+  if (/(^|\.)aclanthology\.org$/.test(u.hostname)) {
+    const id = u.pathname.replace(/\.pdf$/, '').replace(/^\/+|\/+$/g, '');
+    if (id && !id.includes('/')) return `acl:${id}`;
+  }
+  if (/(^|\.)openreview\.net$/.test(u.hostname)) {
+    const id = u.searchParams.get('id');
+    if (id) return `openreview:${id}`;
+  }
+  if (meta?.doi) return `doi:${meta.doi.toLowerCase()}`;
+  const path = u.pathname.replace(/\/+$/, '');
+  return `url:${u.hostname.toLowerCase().replace(/^www\./, '')}${path}${u.search}`;
+}
+
+/** The URL a paper page records: arXiv links become the versionless abs page. */
+export function canonicalPaperUrl(rawUrl: string): string {
+  const u = new URL(rawUrl);
+  if (/(^|\.)arxiv\.org$/.test(u.hostname)) {
+    const id = arxivId(u);
+    if (id) return `https://arxiv.org/abs/${id.replace(/v\d+$/, '')}`;
+  }
+  return rawUrl;
+}
+
+/** Semantic Scholar paper identifier for a canonical paper id (falls back to its URL form). */
+export function s2Identifier(paperId: string, url: string): string {
+  const [kind, ...rest] = paperId.split(':');
+  const id = rest.join(':');
+  if (kind === 'arxiv') return `arXiv:${id}`;
+  if (kind === 'acl') return `ACL:${id}`;
+  if (kind === 'doi') return `DOI:${id}`;
+  return `URL:${url}`;
+}
+
+export interface S2Extra {
+  tldr?: string;
+  abstract?: string;
+}
+
+/**
+ * Best-effort TL;DR (and abstract fallback) from Semantic Scholar. The
+ * keyless API shares one global rate-limit pool and 429s often, so callers
+ * treat any failure as "not available yet" rather than an error.
+ */
+export async function fetchS2Extra(
+  paperId: string,
+  url: string,
+  http: HttpGet,
+  apiKey?: string,
+): Promise<S2Extra> {
+  const id = encodeURIComponent(s2Identifier(paperId, url)).replace(/%3A/g, ':');
+  const body = await http(
+    `https://api.semanticscholar.org/graph/v1/paper/${id}?fields=tldr,abstract`,
+    apiKey ? { 'x-api-key': apiKey } : undefined,
+  );
+  const data = JSON.parse(body);
+  const tldr = typeof data?.tldr?.text === 'string' ? cleanText(data.tldr.text) : undefined;
+  const abstract = typeof data?.abstract === 'string' ? cleanText(data.abstract) : undefined;
+  return { ...(tldr ? { tldr } : {}), ...(abstract ? { abstract } : {}) };
 }

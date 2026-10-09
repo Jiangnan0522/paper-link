@@ -1,0 +1,20 @@
+/* The 📝 wikilink after a paper link, drawn as a small button. */
+a.internal-link.paper-manager-page-btn,
+.markdown-source-view span.paper-manager-page-btn {
+  display: inline-block;
+  padding: 0 0.3em;
+  margin-left: 0.15em;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-secondary);
+  font-size: 0.85em;
+  line-height: 1.45;
+  text-decoration: none;
+  vertical-align: baseline;
+}
+
+a.internal-link.paper-manager-page-btn:hover,
+.markdown-source-view span.paper-manager-page-btn:hover {
+  background-color: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+}
